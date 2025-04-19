@@ -53,6 +53,22 @@
       transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
+    .photo.final {
+      width: 120px;
+      height: 150px;
+      position: relative;
+      transform: none;
+      top: auto;
+      left: auto;
+      margin: 5px;
+      transition: transform 0.3s ease;
+      cursor: pointer;
+    }
+
+    .photo.final:hover {
+      transform: scale(1.05);
+    }
+
     .confetti {
       position: absolute;
       width: 10px;
@@ -95,6 +111,83 @@
       opacity: 1;
     }
 
+    .final-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 2s ease;
+    }
+
+    .final-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .final-overlay h1 {
+      font-size: 28px;
+      color: #e91e63;
+      text-align: center;
+      animation: zoomIn 2s ease;
+      margin-bottom: 30px;
+    }
+
+    .photos-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 10px;
+      max-width: 90%;
+      margin: 0 auto;
+    }
+
+    .photo-enlarged {
+      position: fixed;
+      max-width: 90%;
+      max-height: 90%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 40;
+      border: 5px solid white;
+      box-shadow: 0 0 30px rgba(0,0,0,0.5);
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .photo-enlarged.show {
+      opacity: 1;
+    }
+
+    @keyframes zoomIn {
+      0% { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    @keyframes fly {
+      0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+      50% { opacity: 1; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(1); opacity: 1; }
+    }
+
+    @keyframes confetti-fall {
+      0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+    }
+
+    @keyframes heart-fall {
+      0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+    }
+
     .music-control {
       position: fixed;
       bottom: 15px;
@@ -114,55 +207,6 @@
     .music-control.show {
       display: block;
     }
-
-    @keyframes fly {
-      0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
-      50% { opacity: 1; }
-      100% { transform: translate(var(--tx), var(--ty)) scale(1); opacity: 1; }
-    }
-
-    @keyframes confetti-fall {
-      0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
-      100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
-    }
-
-    @keyframes heart-fall {
-      0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
-      100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
-    }
-
-    .final-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(255, 255, 255, 0.9);
-      z-index: 25;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 2s ease;
-    }
-
-    .final-overlay.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .final-overlay h1 {
-      font-size: 28px;
-      color: #e91e63;
-      text-align: center;
-      animation: zoomIn 2s ease;
-    }
-
-    @keyframes zoomIn {
-      0% { transform: scale(0.5); opacity: 0; }
-      100% { transform: scale(1); opacity: 1; }
-    }
   </style>
 </head>
 <body>
@@ -176,7 +220,9 @@
   </div>
   <div class="final-overlay" id="finalOverlay">
     <h1>С любовью и самыми тёплыми пожеланиями!</h1>
+    <div class="photos-grid" id="photosGrid"></div>
   </div>
+  <div id="enlargedPhotoContainer"></div>
   <button class="music-control" id="musicControl">Выключить музыку</button>
   <audio id="bgMusic" loop>
     <source src="music.mp3" type="audio/mp3">
@@ -191,11 +237,14 @@
       const music = document.getElementById('bgMusic');
       const musicControl = document.getElementById('musicControl');
       const finalOverlay = document.getElementById('finalOverlay');
+      const photosGrid = document.getElementById('photosGrid');
+      const enlargedPhotoContainer = document.getElementById('enlargedPhotoContainer');
 
       const photoCount = 14;
       const animationCycles = 10;
       const MAX_PHOTOS = 60;
       let currentCycle = 0;
+      let allPhotos = [];
 
       envelope.addEventListener('click', function() {
         music.play()
@@ -223,23 +272,18 @@
         runAnimationCycle();
       }
 
-      function cleanupOldPhotos() {
-        const photos = photosContainer.querySelectorAll('.photo');
-        if (photos.length > MAX_PHOTOS) {
-          for (let i = 0; i < photos.length - MAX_PHOTOS; i++) {
-            photos[i].remove();
-          }
-        }
-      }
-
       function runAnimationCycle() {
-        if (currentCycle >= animationCycles) return;
+        if (currentCycle >= animationCycles) {
+          prepareFinalView();
+          return;
+        }
 
         for (let i = 1; i <= photoCount; i++) {
           const photo = document.createElement('div');
           photo.className = 'photo';
           const photoIndex = ((currentCycle * photoCount) + i - 1) % photoCount + 1;
           photo.style.backgroundImage = `url('photo${photoIndex}.jpg')`;
+          photo.dataset.src = `photo${photoIndex}.jpg`;
 
           const angle = (currentCycle * 0.5 + i * (2 * Math.PI / photoCount));
           const distance = 150 + currentCycle * 30;
@@ -249,6 +293,7 @@
           photo.style.left = '50%';
           photo.style.top = '50%';
           photosContainer.appendChild(photo);
+          allPhotos.push(photo);
 
           setTimeout(() => {
             photo.style.opacity = '1';
@@ -261,13 +306,72 @@
 
         setTimeout(() => {
           currentCycle++;
-          cleanupOldPhotos();
           if (currentCycle < animationCycles) {
             runAnimationCycle();
           } else {
-            triggerFinalAnimation();
+            prepareFinalView();
           }
         }, 3000);
+      }
+
+      function prepareFinalView() {
+        // Скрываем основное сообщение
+        message.classList.remove('show');
+        
+        // Показываем финальный экран
+        finalOverlay.classList.add('show');
+        
+        // Собираем уникальные фото
+        const uniquePhotos = [];
+        const usedSources = new Set();
+        
+        for (const photo of allPhotos) {
+          if (!usedSources.has(photo.dataset.src)) {
+            usedSources.add(photo.dataset.src);
+            uniquePhotos.push(photo);
+          }
+        }
+        
+        // Сортируем фото по порядку (photo1, photo2...)
+        uniquePhotos.sort((a, b) => {
+          const numA = parseInt(a.dataset.src.replace('photo', '').replace('.jpg', ''));
+          const numB = parseInt(b.dataset.src.replace('photo', '').replace('.jpg', ''));
+          return numA - numB;
+        });
+        
+        // Добавляем фото в grid (2 ряда по 7 фото)
+        uniquePhotos.forEach((photo, index) => {
+          const photoClone = photo.cloneNode();
+          photoClone.className = 'photo final';
+          photoClone.style.opacity = '1';
+          photoClone.style.animation = 'none';
+          photoClone.addEventListener('click', () => showEnlargedPhoto(photo.dataset.src));
+          photosGrid.appendChild(photoClone);
+        });
+        
+        // Добавляем дополнительные сердечки
+        createHearts(30);
+      }
+
+      function showEnlargedPhoto(src) {
+        enlargedPhotoContainer.innerHTML = '';
+        
+        const enlargedPhoto = document.createElement('img');
+        enlargedPhoto.className = 'photo-enlarged';
+        enlargedPhoto.src = src;
+        enlargedPhotoContainer.appendChild(enlargedPhoto);
+        
+        setTimeout(() => {
+          enlargedPhoto.classList.add('show');
+        }, 10);
+        
+        // Закрытие по клику
+        enlargedPhoto.addEventListener('click', () => {
+          enlargedPhoto.classList.remove('show');
+          setTimeout(() => {
+            enlargedPhoto.remove();
+          }, 500);
+        });
       }
 
       function createConfetti(count) {
@@ -296,11 +400,6 @@
             setTimeout(() => heart.remove(), 5000);
           }, i * 100);
         }
-      }
-
-      function triggerFinalAnimation() {
-        finalOverlay.classList.add('show');
-        createHearts(30);
       }
 
       musicControl.addEventListener('click', function() {
